@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>掃地工作志願序填寫</title>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.2/Sortable.min.js"></script>
+
+<style>
+  :root{
+    --primary:#0d9488; --primary-dark:#0f766e; --bg:#f0fdfa; --card:#fff;
+    --text:#134e4a; --muted:#64748b; --border:#e2e8f0; --radius:14px;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{font-family:"Microsoft JhengHei","PingFang TC","Noto Sans TC",sans-serif; background:var(--bg); color:var(--text); padding-bottom:60px;}
+  header{background:linear-gradient(135deg,#115e59,#0d9488); color:#fff; padding:26px 16px; text-align:center;}
+  header h1{font-size:1.5rem; letter-spacing:2px;}
+  header p{margin-top:6px; opacity:.9; font-size:.92rem;}
+  .container{max-width:1100px; margin:0 auto; padding:16px;}
+  .card{background:var(--card); border-radius:var(--radius); box-shadow:0 1px 4px rgba(0,0,0,.08); padding:20px; margin-top:18px;}
+  .card h2{font-size:1.12rem; margin-bottom:12px; color:var(--primary-dark); border-left:5px solid var(--primary); padding-left:10px;}
+  .banner{padding:12px 16px; border-radius:var(--radius); margin-top:18px; font-weight:bold; text-align:center;}
+  .banner.warn{background:#fef3c7; color:#92400e; display:none;}
+  .row{display:flex; gap:12px; flex-wrap:wrap; margin-top:10px;}
+  .row input{flex:1; min-width:140px; padding:11px 12px; border:1.5px solid var(--border); border-radius:10px; font-size:1rem; font-family:inherit;}
+  .row input:focus{outline:none; border-color:var(--primary);}
+  .zone-pick{display:flex; gap:12px; margin-top:12px;}
+  .zone-pick label{flex:1; border:2px solid var(--border); border-radius:var(--radius); padding:16px; text-align:center; cursor:pointer; font-size:1.05rem; font-weight:bold; transition:.15s;}
+  .zone-pick input{display:none;}
+  .zone-pick label.sel{border-color:var(--primary); background:#ccfbf1; color:var(--primary-dark);}
+  .layout{display:grid; grid-template-columns:1.2fr 1fr; gap:18px; align-items:start;}
+  @media(max-width:860px){.layout{grid-template-columns:1fr;}}
+  #rankList{list-style:none; margin-top:6px;}
+  #rankList li{display:flex; align-items:center; gap:12px; background:#fff; border:1.5px solid var(--border); border-radius:12px; padding:12px 14px; margin-top:8px; cursor:grab; user-select:none; transition:box-shadow .15s;}
+  #rankList li:active{cursor:grabbing;}
+  #rankList li.sortable-ghost{opacity:.4; background:#ccfbf1;}
+  #rankList li .rank{min-width:34px; height:34px; border-radius:50%; background:var(--primary); color:#fff; font-weight:bold; display:flex; align-items:center; justify-content:center;}
+  #rankList li .job b{display:block; font-size:1rem;}
+  #rankList li .job span{font-size:.83rem; color:var(--muted);}
+  #rankList li .grip{margin-left:auto; color:#94a3b8; font-size:1.2rem;}
+  .hint{font-size:.88rem; color:var(--muted); margin-top:8px;}
+  .btn{display:block; width:100%; background:var(--primary); color:#fff; border:none; border-radius:12px; padding:14px; font-size:1.05rem; font-weight:bold; cursor:pointer; letter-spacing:2px; margin-top:16px;}
+  .btn:hover{background:var(--primary-dark);}
+  .btn:disabled{background:#94a3b8; cursor:not-allowed;}
+  /* 即時統計 */
+  .stat-job{margin-top:12px; border:1px solid var(--border); border-radius:12px; padding:10px 12px;}
+  .stat-job b{font-size:.95rem;}
+  .bar-bg{background:#e2e8f0; border-radius:6px; height:18px; margin-top:6px; overflow:hidden; position:relative;}
+  .bar-fill{background:var(--primary); height:100%; border-radius:6px; transition:width .4s;}
+  .bar-bg span{position:absolute; right:8px; top:0; font-size:.78rem; line-height:18px; color:var(--text);}
+  .stat-meta{font-size:.8rem; color:var(--muted); margin-top:4px;}
+  .outer-list{margin-top:8px; font-size:.92rem;}
+  .outer-list span{display:inline-block; background:#ccfbf1; color:var(--primary-dark); border-radius:999px; padding:3px 12px; margin:4px 4px 0 0;}
+  footer{text-align:center; color:var(--muted); font-size:.82rem; margin-top:30px;}
+</style>
+</head>
+<body>
+
+<header>
+  <h1 id="pageTitle">掃地工作志願序填寫</h1>
+  <p>先選擇內掃區或外掃區；內掃區請用「拖曳方塊」排出你的志願序（第 1 志願在最上面）。</p>
+</header>
+
+<div class="container">
+
+  <div id="setupWarn" class="banner warn">
+    ⚠️ 尚未設定 Firebase！請開啟本檔案，依「Firebase設定說明」將設定碼貼入 CONFIG 區塊後再使用。
+  </div>
+
+  <div class="layout">
+    <!-- 左：填寫區 -->
+    <div>
+      <div class="card">
+        <h2>1. 基本資料</h2>
+        <div class="row">
+          <input id="seatNo" type="text" inputmode="numeric" placeholder="座號（例：07）" maxlength="3">
+          <input id="stuName" type="text" placeholder="姓名" maxlength="10">
+        </div>
+        <h2 style="margin-top:18px;">2. 選擇掃區</h2>
+        <div class="zone-pick">
+          <label id="zoneInLabel"><input type="radio" name="zone" value="inner">🧹 內掃區（教室）</label>
+          <label id="zoneOutLabel"><input type="radio" name="zone" value="outer">🌳 外掃區</label>
+        </div>
+      </div>
+
+      <div class="card" id="rankCard" style="display:none;">
+        <h2>3. 拖曳排出志願序</h2>
+        <p class="hint">按住方塊上下拖動即可排序，最上面是第 1 志願。手機也可以直接長按拖曳。</p>
+        <ul id="rankList"></ul>
+      </div>
+
+      <div class="card" id="outerCard" style="display:none;">
+        <h2>3. 外掃區登記</h2>
+        <p class="hint">選擇外掃區不需排志願序，送出後即完成登記，實際工作由老師分配。</p>
+      </div>
+
+      <div class="card" id="submitCard" style="display:none;">
+        <button class="btn" id="submitBtn">送出志願</button>
+        <p class="hint" style="text-align:center;">同一座號重複送出時，以最後一次送出的內容為準。</p>
+      </div>
+    </div>
+
+    <!-- 右：即時統計 -->
+    <div class="card">
+      <h2>📊 即時志願狀況</h2>
+      <p class="hint" id="totalCount">尚無人填寫。</p>
+      <div id="statInner"></div>
+      <div class="stat-job" style="margin-top:16px;">
+        <b>🌳 外掃區登記名單</b>
+        <div class="outer-list" id="outerList">（尚無人登記）</div>
+      </div>
+    </div>
+  </div>
+
+  <footer>各工作以「第 1 志願人數」長條顯示，括號內為平均志願序（數字越小代表越搶手）。</footer>
+</div>
+
+<script>
+/* ============================================================
+   ★★★ CONFIG：要重複使用時改這裡 ★★★
+   1. jobs：內掃區工作清單（可增刪）
+   2. periodKey：每學期換一個新代號，資料就會分開存
+   3. firebaseConfig：貼上你的 Firebase 設定碼（與評分表可共用同一專案）
+   ============================================================ */
+const CONFIG = {
+  className : "電機一乙",
+  periodKey : "2026-06-sweep",          // ★每次重新分配換新代號
+  jobs : [
+    {id:"j01", name:"教室走廊掃地＋拖地", desc:"掃淨垃圾與沙塵，注意牆柱與落水孔"},
+    {id:"j02", name:"走廊窗戶＋飲水機",   desc:"窗框與牆面都要擦；飲水機擦拭與清掃"},
+    {id:"j03", name:"黑板＋內外白板",     desc:"處理板擦與黑板抹布、數位黑板板溝、教室內外白板"},
+    {id:"j04", name:"講台＋邊桌",         desc:"講台地板打掃、整理水粉筆、桌面抽屜整齊"},
+    {id:"j05", name:"教室掃地",           desc:"地面打掃，包含門後垃圾與沙塵都掃淨"},
+    {id:"j06", name:"教室拖地",           desc:"掃地同學完成後可拖地，水要擰乾"},
+    {id:"j07", name:"外側窗戶＋前後門內外門板", desc:"窗戶要乾淨、窗內框軌都要擦拭；前後門內外都拭淨"},
+    {id:"j08", name:"倒垃圾",             desc:"倒垃圾前整理垃圾，週五放學要洗垃圾桶"},
+    {id:"j09", name:"倒回收／洗回收籃",   desc:"回收確實分類，週五放學洗回收籃"},
+    {id:"j10", name:"放學後排整課桌椅",   desc:"負責課後整間教室課桌椅排列整齊"},
+    {id:"j11", name:"整理掃具、公布欄",   desc:"負責整齊排放掃具，公布欄整潔"},
+  ],
+  /* ★★★ 貼上你的 Firebase 設定碼（請見 Firebase設定說明.md） ★★★ */
+  firebaseConfig : {
+    apiKey: "AIzaSyA4CRJlu9TTeuffLNKTwnafbmCPXhMydsA",
+    authDomain: "請貼上",
+    databaseURL: "https://class-ee1b-default-rtdb.firebaseio.com/",
+    projectId: "請貼上",
+    storageBucket: "請貼上",
+    messagingSenderId: "請貼上",
+    appId: "請貼上"
+  }
+};
+
+const $ = id => document.getElementById(id);
+$("pageTitle").textContent = CONFIG.className + " 掃地工作志願序填寫";
+
+/* Firebase */
+let db = null, configured = false;
+try{
+  if(CONFIG.firebaseConfig.apiKey && CONFIG.firebaseConfig.apiKey !== "請貼上"){
+    firebase.initializeApp(CONFIG.firebaseConfig);
+    db = firebase.database();
+    configured = true;
+  }
+}catch(e){ console.error(e); }
+if(!configured) $("setupWarn").style.display = "block";
+
+const entriesRef = () => db.ref("sweepChoices/" + CONFIG.periodKey + "/entries");
+
+/* ====== 志願序拖曳清單 ====== */
+function buildList(){
+  $("rankList").innerHTML = CONFIG.jobs.map(j=>`
+    <li data-id="${j.id}">
+      <span class="rank"></span>
+      <div class="job"><b>${j.name}</b><span>${j.desc}</span></div>
+      <span class="grip">⠿</span>
+    </li>`).join("");
+  new Sortable($("rankList"), {animation:160, ghostClass:"sortable-ghost", onSort:updateRankNumbers});
+  updateRankNumbers();
+}
+function updateRankNumbers(){
+  document.querySelectorAll("#rankList li").forEach((li,i)=> li.querySelector(".rank").textContent = i+1);
+}
+
+/* ====== 掃區切換 ====== */
+let zone = null;
+document.querySelectorAll('input[name="zone"]').forEach(r=>{
+  r.addEventListener("change", ()=>{
+    zone = r.value;
+    $("zoneInLabel").classList.toggle("sel", zone==="inner");
+    $("zoneOutLabel").classList.toggle("sel", zone==="outer");
+    $("rankCard").style.display = zone==="inner" ? "block" : "none";
+    $("outerCard").style.display = zone==="outer" ? "block" : "none";
+    $("submitCard").style.display = "block";
+  });
+});
+
+/* ====== 送出 ====== */
+$("submitBtn").addEventListener("click", ()=>{
+  if(!configured){ alert("尚未設定 Firebase，無法送出。"); return; }
+  const seat = $("seatNo").value.trim();
+  const name = $("stuName").value.trim();
+  if(!seat || !name){ alert("請先填寫座號與姓名。"); return; }
+  if(!zone){ alert("請選擇內掃區或外掃區。"); return; }
+
+  const entry = {seat, name, zone, ts:Date.now()};
+  if(zone === "inner"){
+    entry.ranking = [...document.querySelectorAll("#rankList li")].map(li=>li.dataset.id);
+  }
+  $("submitBtn").disabled = true;
+  entriesRef().child(seat).set(entry)
+    .then(()=>{ alert("送出成功！你的志願已登記。"); $("submitBtn").disabled = false; })
+    .catch(e=>{ alert("送出失敗："+e.message); $("submitBtn").disabled = false; });
+});
+
+/* ====== 即時統計 ====== */
+function renderStats(entries){
+  const list = Object.values(entries||{});
+  const inner = list.filter(e=>e.zone==="inner");
+  const outer = list.filter(e=>e.zone==="outer");
+  $("totalCount").textContent = `已填寫 ${list.length} 人｜內掃區 ${inner.length} 人、外掃區 ${outer.length} 人`;
+
+  /* 每項工作：第1志願人數 + 平均志願序 */
+  const stat = {};
+  CONFIG.jobs.forEach(j=> stat[j.id] = {first:0, sum:0, cnt:0});
+  inner.forEach(e=>{
+    (e.ranking||[]).forEach((jid,idx)=>{
+      if(!stat[jid]) return;
+      stat[jid].sum += idx+1; stat[jid].cnt++;
+      if(idx===0) stat[jid].first++;
+    });
+  });
+  const maxFirst = Math.max(1, ...CONFIG.jobs.map(j=>stat[j.id].first));
+
+  $("statInner").innerHTML = CONFIG.jobs.map(j=>{
+    const s = stat[j.id];
+    const avg = s.cnt ? (s.sum/s.cnt).toFixed(1) : "—";
+    const pct = Math.round(s.first / maxFirst * 100);
+    return `
+    <div class="stat-job">
+      <b>${j.name}</b>
+      <div class="bar-bg"><div class="bar-fill" style="width:${pct}%"></div><span>第1志願：${s.first} 人</span></div>
+      <div class="stat-meta">平均志願序：${avg}</div>
+    </div>`;
+  }).join("");
+
+  $("outerList").innerHTML = outer.length
+    ? outer.sort((a,b)=>a.seat.localeCompare(b.seat,"zh-Hant",{numeric:true})).map(e=>`<span>${escapeHtml(e.seat)} ${escapeHtml(e.name)}</span>`).join("")
+    : "（尚無人登記）";
+}
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g, m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m])); }
+
+if(configured){
+  entriesRef().on("value", snap=> renderStats(snap.val()||{}));
+}else{
+  renderStats({});
+}
+buildList();
+</script>
+</body>
+</html>
